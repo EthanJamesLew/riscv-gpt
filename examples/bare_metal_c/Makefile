@@ -1,19 +1,26 @@
 CC=riscv64-unknown-elf-gcc
-ASSEMBLER=riscv64-unknown-elf-as
+AS=riscv64-unknown-elf-as
 CFLAGS=-mabi=lp64d -march=rv64imafd -nostdlib
 LINKER=riscv64-unknown-elf-ld
 
+SOURCES := $(wildcard *.c)
+SOURCES += $(wildcard *.s)
+OBJS := $(patsubst %.c, %.o, $(SOURCES))
+OBJS := $(patsubst %.s, %.o, $(OBJS))
 
-all: fibc
+EXEC := fibc.elf
 
-fibc: start.o main.o
-	$(LINKER) -o fibc start.o main.o
+all: $(EXEC) 
 
-start.o: start.s
-	$(ASSEMBLER) -o start.o start.s
+$(EXEC): $(OBJS) 
+	$(LINKER) -o $(EXEC) $(OBJS) 
 
-main.o: main.c
-	$(CC) $(CFLAGS) -c main.c
+%.o: %.s
+	$(AS) -c $< -o $@ 
+
+%.o: %.c
+	$(CC) $(CFLAGS) -c $< -o $@ 
 
 clean:
-	rm fibc *.o
+	rm *.o
+	rm $(EXEC)
