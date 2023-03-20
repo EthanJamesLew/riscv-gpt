@@ -106,15 +106,14 @@ impl Emulator {
 
             // BEQZ rs1, offset
             0x63 => {
+                let imm = ((instruction >> 8) & 0xfff) as i32;
                 let rs1 = ((instruction >> 15) & 0x1f) as usize;
-                let offset = (((instruction >> 8) & 0xff) << 1) as i32;
-                let target = self.pc as i32 + offset;
-
                 if self.registers[rs1] == 0 {
-                    self.pc = target as u32;
-                    println!("BEQZ: taken, branch to {:#x}", target);
+                    let offset = (imm << 20) >> 20;
+                    self.pc = (self.pc as i32 + offset) as u32;
+                    println!("BEQZ: jumped to {:x?} (offset {})", self.pc, offset);
                 } else {
-                    println!("BEQZ: not taken, continue to next instruction");
+                    println!("BEQZ: did not jump");
                 }
             }
 
@@ -124,8 +123,8 @@ impl Emulator {
                 let offset = (((instruction >> 31) as i32) << 31 >> 21) | (((instruction >> 21) & 0x3ff) as i32) << 1 >> 1;
                 let return_address = self.pc + 4;
                 self.registers[rd] = return_address as u32;
-                self.pc = (self.pc as i32 + offset * 4) as u32;
-                println!("JAL: jumped to {} (offset {})", self.pc, offset);
+                self.pc = (self.pc as i32 + offset * 2 - 4) as u32;
+                println!("JAL: jumped to {:x?} (offset {})", self.pc, offset);
             }
 
             // ECALL

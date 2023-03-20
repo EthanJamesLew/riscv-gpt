@@ -16,12 +16,12 @@ fib_loop:
     mv a0, a1
 
     # Compute next Fibonacci number
-    add t0, a1, a2
+    add a4, a1, a2
     mv a1, a2
-    mv a2, t0
+    mv a2, a4
 
     # Decrement count
-    #addi a3, a3, -1
+    addi a3, a3, -1
 
     # Loop back to fib_loop
     j fib_loop
