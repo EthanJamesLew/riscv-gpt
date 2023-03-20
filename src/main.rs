@@ -48,6 +48,7 @@ impl Emulator {
             .copy_from_slice(&binary_data[text_offset..(text_offset + text_size)]);
 
         // Set the program counter to the start of the .text section
+        // TODO: fetch the start address rather than the start of text
         self.pc = text_shdr.sh_addr as u32;
 
         Ok(())
