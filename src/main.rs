@@ -1,4 +1,3 @@
-use goblin::elf::Elf;
 use std::env;
 use std::fs;
 
@@ -22,32 +21,34 @@ impl Emulator {
     }
 
     fn load_program(&mut self, binary_data: &[u8]) -> Result<(), String> {
-        let elf_file =
-            Elf::parse(&binary_data).map_err(|e| format!("Failed to parse ELF file: {}", e))?;
+        use goblin::{elf::program_header::*, elf::section_header::*};
 
-        let mut pc: u64 = 0;
-        for ph in &elf_file.program_headers {
-            if ph.p_type == goblin::elf::program_header::PT_LOAD {
-                let start = ph.p_vaddr as usize;
-                let end = start + ph.p_memsz as usize;
-                let section_data =
-                    &binary_data[ph.p_offset as usize..(ph.p_offset + ph.p_filesz) as usize];
+        let elf = goblin::elf::Elf::parse(binary_data)
+            .map_err(|e| format!("Failed to parse ELF file: {}", e))?;
 
-                self.memory[start..end].copy_from_slice(&section_data);
+        // Find the program header and section header for the .text section
+        let text_phdr = elf
+            .program_headers
+            .iter()
+            .find(|phdr| phdr.p_type == PT_LOAD && phdr.p_flags == (PF_R | PF_X))
+            .ok_or_else(|| "No loadable .text segment found in ELF file".to_string())?;
+        let text_shdr = elf
+            .section_headers
+            .iter()
+            .find(|shdr| {
+                shdr.sh_type == SHT_PROGBITS && shdr.sh_flags == (SHF_ALLOC | SHF_EXECINSTR).into()
+            })
+            .ok_or_else(|| "No .text section found in ELF file".to_string())?;
 
-                // Print out the contents of the memory region that was just loaded
-                println!("{:x?}", &self.memory[start..end]);
+        // Read the contents of the .text section into memory
+        let text_offset = text_shdr.sh_offset as usize;
+        let text_size = text_shdr.sh_size as usize;
+        let text_addr = text_shdr.sh_addr as usize;
+        self.memory[text_addr..(text_addr + text_size)]
+            .copy_from_slice(&binary_data[text_offset..(text_offset + text_size)]);
 
-                // Set the program counter to the start of the .text section
-                if ph.p_flags & goblin::elf::program_header::PF_X != 0 {
-                    pc = ph.p_vaddr;
-                }
-            }
-        }
-
-        // Initialize the program counter
-        // TODO: this is hard coded for now
-        self.pc = 0x10078;
+        // Set the program counter to the start of the .text section
+        self.pc = text_shdr.sh_addr as u32;
 
         Ok(())
     }
@@ -66,7 +67,7 @@ impl Emulator {
     }
 
     fn decode_execute(&mut self, instruction: u32) {
-        println!("{:x?}, pc {:x?}", instruction & 0x7f, self.pc);
+        println!("{:x?}, pc {:x?}", instruction & 0x7f, self.pc - 4);
         // Decode and execute the instruction
         match instruction & 0x7f {
             // ADD rd, rs1, rs2
@@ -106,10 +107,12 @@ impl Emulator {
 
             // BEQZ rs1, offset
             0x63 => {
-                let imm = ((instruction >> 8) & 0xfff) as i32;
                 let rs1 = ((instruction >> 15) & 0x1f) as usize;
+                let imm =
+                    (((instruction >> 31) as i32) << 11) | (((instruction >> 7) & 0x1f) as i32);
+                let offset = (imm << 19) >> 19; // Sign extend the 12-bit immediate field
                 if self.registers[rs1] == 0 {
-                    let offset = (imm << 20) >> 20;
+                    //let offset = (imm << 20) >> 20;
                     self.pc = (self.pc as i32 + offset) as u32;
                     println!("BEQZ: jumped to {:x?} (offset {})", self.pc, offset);
                 } else {
@@ -128,10 +131,37 @@ impl Emulator {
                 println!("JAL: jumped to {:x?} (offset {})", self.pc, offset);
             }
 
+            // SD rs2, offset(rs1)
+            0x23 => {
+                let rs1 = ((instruction >> 15) & 0x1f) as usize;
+                let imm = (((instruction >> 7) & 0x1f) | ((instruction >> 25) << 5)) as i32;
+                //let imm = ((((instruction >> 7) & 0x1f) | ((instruction >> 25) << 5)) as i32) << 20 >> 20;
+                let rs2 = ((instruction >> 20) & 0x1f) as usize;
+
+                let addr = (self.registers[rs1] as i32).wrapping_add(imm) as usize;
+                let value0 = self.registers[rs2] as u32;
+                let value1 = self.registers[rs2 + 1] as u32;
+
+                println!(
+                    "{:x?} (from {rs1}) with {imm} to {rs2}",
+                    self.registers[rs1]
+                );
+
+                self.memory[addr..(addr + 4)].copy_from_slice(&value1.to_le_bytes());
+                self.memory[(addr + 4)..(addr + 8)].copy_from_slice(&value0.to_le_bytes());
+
+                println!(
+                    "SD: stored {} to {}",
+                    ((value0 as u64) << 32) | (value1 as u64),
+                    addr
+                );
+            }
+
             // ECALL
             0x73 => {
                 // The ecall instruction is used to call operating system services
                 // In this emulator, we simply exit the program when an ecall instruction is encountered
+                println!("ECALL");
                 std::process::exit(0);
             }
 
