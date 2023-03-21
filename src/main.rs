@@ -1,5 +1,7 @@
+mod emuview;
 use std::env;
 use std::fs;
+use emuview::emuview::TUIRenderer;
 
 const MEMORY_SIZE: usize = 1024 * 1024; // 1MB
 const REGISTER_COUNT: usize = 32;
@@ -67,8 +69,13 @@ impl Emulator {
         instruction
     }
 
+    fn step(&mut self) {
+        let instruction = self.fetch();
+        self.decode_execute(instruction);
+    }
+
     fn decode_execute(&mut self, instruction: u32) {
-        println!("{:x?}, pc {:x?}", instruction & 0x7f, self.pc - 4);
+        //println!("{:x?}, pc {:x?}", instruction & 0x7f, self.pc - 4);
         // Decode and execute the instruction
         match instruction & 0x7f {
             // ADD rd, rs1, rs2
@@ -78,7 +85,7 @@ impl Emulator {
                 let rs2 = ((instruction >> 20) & 0x1f) as usize;
                 self.registers[rd] = self.registers[rs1] + self.registers[rs2];
 
-                println!("ADD: {:?} from {rs1} and {rs2}", self.registers[rd])
+                //println!("ADD: {:?} from {rs1} and {rs2}", self.registers[rd])
             }
 
             // ADDI
@@ -93,14 +100,14 @@ impl Emulator {
                         let imm = ((instruction >> 20) as i32) << 20 >> 20;
                         self.registers[rd] = self.registers[rs1].wrapping_add(imm as u32);
 
-                        println!("ADDI: added {imm} to {rs1} and stored result in {rd}");
+                        //println!("ADDI: added {imm} to {rs1} and stored result in {rd}");
                     }
                     // MV rd, rs1
                     0x1 => {
                         let rs1 = ((instruction >> 15) & 0x1f) as usize;
                         self.registers[rd] = self.registers[rs1];
 
-                        println!("MV: moved contents of {rs1} to {rd}");
+                        //println!("MV: moved contents of {rs1} to {rd}");
                     }
                     _ => panic!("Unknown instruction: {:08x}", instruction),
                 }
@@ -115,9 +122,9 @@ impl Emulator {
                 if self.registers[rs1] == 0 {
                     //let offset = (imm << 20) >> 20;
                     self.pc = (self.pc as i32 + offset) as u32;
-                    println!("BEQZ: jumped to {:x?} (offset {})", self.pc, offset);
+                    //println!("BEQZ: jumped to {:x?} (offset {})", self.pc, offset);
                 } else {
-                    println!("BEQZ: did not jump");
+                    //println!("BEQZ: did not jump");
                 }
             }
 
@@ -129,7 +136,7 @@ impl Emulator {
                 let return_address = self.pc + 4;
                 self.registers[rd] = return_address as u32;
                 self.pc = (self.pc as i32 + offset * 2 - 4) as u32;
-                println!("JAL: jumped to {:x?} (offset {})", self.pc, offset);
+                //println!("JAL: jumped to {:x?} (offset {})", self.pc, offset);
             }
 
             // SD rs2, offset(rs1)
@@ -143,26 +150,26 @@ impl Emulator {
                 let value0 = self.registers[rs2] as u32;
                 let value1 = self.registers[rs2 + 1] as u32;
 
-                println!(
-                    "{:x?} (from {rs1}) with {imm} to {rs2}",
-                    self.registers[rs1]
-                );
+                //println!(
+                //    "{:x?} (from {rs1}) with {imm} to {rs2}",
+                //    self.registers[rs1]
+                //);
 
                 self.memory[addr..(addr + 4)].copy_from_slice(&value1.to_le_bytes());
                 self.memory[(addr + 4)..(addr + 8)].copy_from_slice(&value0.to_le_bytes());
 
-                println!(
-                    "SD: stored {} to {}",
-                    ((value0 as u64) << 32) | (value1 as u64),
-                    addr
-                );
+                //println!(
+                //    "SD: stored {} to {}",
+                //    ((value0 as u64) << 32) | (value1 as u64),
+                //    addr
+                //);
             }
 
             // ECALL
             0x73 => {
                 // The ecall instruction is used to call operating system services
                 // In this emulator, we simply exit the program when an ecall instruction is encountered
-                println!("ECALL");
+                //println!("ECALL");
                 std::process::exit(0);
             }
 
@@ -187,15 +194,14 @@ fn main() {
     let mut emulator = Emulator::new();
     let _program = emulator.load_program(&binary_data);
 
+    let _tmp = emulator.memory.to_vec();
+    let mut renderer = TUIRenderer::new().unwrap();
+
     // Run the program
     loop {
-        let instruction = emulator.fetch();
-        emulator.decode_execute(instruction);
-        if instruction == 0x73 {
-            // ecall instruction halts the program
-            break;
-        }
+        emulator.step();
+        renderer.render(&emulator.memory, &emulator.registers);
     }
     // Print the result (11)
-    println!("{}", emulator.registers[10]);
+    //println!("{}", emulator.registers[10]);
 }

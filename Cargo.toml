@@ -7,3 +7,5 @@ edition = "2021"
 
 [dependencies]
 goblin = "0.6.1"
+termion = "2.0.1"
+tui = { version = "0.17.0", features = ["termion"] }
